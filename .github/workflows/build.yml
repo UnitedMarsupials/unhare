@@ -10,7 +10,7 @@ jobs:
     name: FreeBSD
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Everything the build wants is in the base system: clang, libelf,
       # bsd.prog.mk, objcopy and xz.  There is nothing to install.
@@ -22,3 +22,21 @@ jobs:
             set -e
             make
             make test
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install libelf
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libelf-dev
+
+      # GNU make reads GNUmakefile in preference to anything else, so
+      # BSDmakefile is not in the way here.
+      - name: build and test
+        run: |
+          make
+          make test
