@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Nothing here writes anything back; reading the tree is the whole of it.
+permissions:
+  contents: read
+
 jobs:
   freebsd:
     name: FreeBSD
