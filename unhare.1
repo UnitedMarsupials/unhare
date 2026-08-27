@@ -1,0 +1,296 @@
+.\"-
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2026 Mikhail Teterin
+.\"
+.Dd August 26, 2026
+.Dt UNHARE 1
+.Os
+.Sh NAME
+.Nm unhare
+.Nd extract the filesystem bundled into a Bun standalone binary
+.Sh SYNOPSIS
+.Nm
+.Op Fl flv
+.Op Fl o Ar pattern
+.Op Fl s Ar section
+.Ar file
+.Nm
+.Fl t
+.Op Fl flv
+.Op Fl o Ar pattern
+.Op Fl s Ar section
+.Nm
+.Fl h
+.Sh DESCRIPTION
+The
+.Nm
+utility unpacks the modules that
+.Xr bun 1
+embeds into an executable produced by
+.Cm bun build Fl Fl compile ,
+writing each of them out as a regular file.
+.Pp
+The bundle is located by asking
+.Xr elf 3
+for the
+.Dq Li .bun
+section of
+.Ar file ,
+so a payload that is not the last thing in the file
+.Pq one followed by a section header table, a symbol table or debugging information
+is found just as reliably as one appended to the end.
+Section names are not unique in ELF, so every section called
+.Dq Li .bun
+is gathered, and each bundle among them unpacked in turn.
+Module names are a bundle's own business and nothing keeps them apart
+across bundles, so each is given a directory of its own, named by the
+.Fl o
+pattern.
+Should no such section hold one, as happens with a stripped executable,
+with the older
+.Xr bun 1
+releases that merely concatenated the payload,
+or with a Mach-O or PE binary built for another platform,
+.Nm
+scans the
+whole file for the bundle trailer instead.
+The trailer search knows nothing of ELF, so a binary of any format
+unpacks so long as the bundle is in it somewhere.
+.Pp
+Should
+.Xr elf_begin 3
+itself fail, which takes an exhausted system
+rather than an unusual file,
+.Nm
+says so and stops.
+It does not scan in that case: the bytes it would scan are the ones
+libelf could not get hold of.
+.Pp
+Module names are taken from Bun's virtual filesystem, whose
+.Pa /$bunfs/
+and
+.Pa B:\e~BUN\e
+prefixes are stripped before the name is appended to the output directory.
+A name that would place a file outside that directory is refused and the
+module is skipped with a warning.
+.Pp
+An existing file is never replaced unless
+.Fl f
+is given.
+.Pp
+Neither is a symbolic link followed, with
+.Fl f
+or without it, whether
+it stands for the file itself or for a directory along the way.
+A link left in the output directory would otherwise carry the write
+outside it, which is the very thing refusing
+.Pa ..
+in a name is meant
+to prevent.
+The directory named by
+.Fl o
+is the user's own and is exempt; only what
+lies beneath it is held to this.
+.Pp
+Names are printed with their control characters escaped, as
+.Ql \e033
+and the like.
+A name out of the bundle is not to be trusted with a terminal: an escape
+sequence among them can rewrite what is shown, and a newline can forge
+an entry in a listing meant to be read a line at a time.
+Bytes at or above 0x80 are left alone, so UTF-8 names stay legible.
+.Pp
+Each module records the encoding of its contents.
+Text that does not fit in Latin-1 is bundled as UTF-16LE, and
+.Nm
+converts it back to UTF-8 on the way out, so that the extracted file
+reads the way the original source did.
+Contents recorded as Latin-1 or as binary are written through unchanged.
+.Pp
+The options are as follows:
+.Bl -tag -width indent
+.It Fl f
+Overwrite files that are already there.
+Without it,
+.Nm
+writes nothing at all when any of the files it would
+create exists already, so that a run which would clobber something
+leaves the directory as it found it rather than stopping partway
+through with the job half done.
+.It Fl h
+Print the usage to standard output and exit successfully.
+.It Fl l
+List the files that would be written, one to a line, and write
+none of them.
+Nothing is created, not even the output directory, and an existing file
+in the way is neither an error nor worth remarking on, there being
+nothing to overwrite.
+The names are the ones a real run would produce, output directory and
+all, so that what is listed is what would appear.
+A single
+.Fl v
+annotates them, the listing being the point already.
+.It Fl o Ar pattern
+Write the extracted files below the directory
+.Ar pattern
+names, creating it and any missing parents if necessary.
+The default is the current directory.
+.Pp
+A single
+.Xr printf 3
+conversion in
+.Ar pattern
+is replaced by the
+index of the section a bundle came from, so that
+.Fl o Li out%u
+unpacks the bundle in section 29 into
+.Pa out29 .
+Only the integer conversions are allowed, with their flags and widths;
+anything else is refused rather than handed on to
+.Xr printf 3 .
+A bundle found by scanning, rather than in a section, answers to zero.
+When more than one bundle is to be unpacked a pattern without a
+conversion is an error, naming as it does a single place for all of
+them.
+.It Fl s Ar section
+Unpack only the bundle in the given section, which
+may be given more than once to name several.
+The default is to unpack every one of them.
+.It Fl t
+Unpack the bundle built into
+.Nm
+itself, rather than one
+named on the command line, and take no
+.Ar file
+operand.
+The program to read is the one named by
+.Va argv Ns Bq 0 ,
+or, when that names no readable file, the one the kernel reports for
+this process.
+The bundle holds the
+.Pa tests
+directory of the distribution, which
+.Cm make test
+unpacks and compares against the original.
+.It Fl v
+Be verbose.
+Given once, write the name of each extracted file to standard output,
+one to a line, and report on standard error where the bundle was found
+and how much was written.
+Given twice, annotate each name with the number of bytes written, the
+loader, module format, encoding and side, and report the bundle header
+as well.
+.Pp
+The listing goes to standard output and everything else to standard
+error, so that a single
+.Fl v
+leaves a list of names fit to pipe
+onward.
+.El
+.Sh EXIT STATUS
+.Nm
+exits 0 on success.
+A failure exits with whichever code from
+.In sysexits.h
+fits it:
+.Bl -tag -width EX_CANTCREAT -compact -offset indent
+.It Dv EX_USAGE
+An unknown option, or the wrong number of operands.
+.It Dv EX_NOINPUT
+The named file cannot be read at all.
+.It Dv EX_DATAERR
+It can, but holds no bundle that can be made sense of.
+.It Dv EX_CANTCREAT
+The output cannot be laid down, an existing file in
+the way among the reasons.
+.It Dv EX_IOERR
+Writing the output failed partway through.
+.It Dv EX_OSERR
+The system denied us memory, or an answer it was asked
+for.
+.It Dv EX_SOFTWARE
+The ELF library is too old to talk to.
+.El
+.Sh EXAMPLES
+Unpack an application into
+.Pa ./app-files ,
+listing what is written:
+.Bd -literal -offset indent
+unhare -v -o app-files ./app
+.Ed
+.Pp
+See what would be written, and where, without writing it:
+.Bd -literal -offset indent
+unhare -l -o app-files ./app
+.Ed
+.Pp
+Unpack a binary carrying more than one bundle, each below the
+number of the section it came from:
+.Bd -literal -offset indent
+unhare -o 'app%u' ./app
+.Ed
+.Pp
+Unpack only the bundle in section 29:
+.Bd -literal -offset indent
+unhare -s 29 -o app-files ./app
+.Ed
+.Pp
+Unpack the bundle this program carries:
+.Bd -literal -offset indent
+unhare -t -o /tmp/unhare-tests
+.Ed
+.Sh DIAGNOSTICS
+.Nm
+carries a bundle of its own, in its own
+.Dq Li .bun
+section, so that
+.Cm make test
+can check a freshly built program against a known answer.
+Running
+.Nm
+on its own executable, with or without
+.Fl t ,
+therefore unpacks that bundle rather than reporting that nothing was
+found.
+.Pp
+Each directory of the bundled tree is stored under the Bun encoding it
+is named for, so that one tree exercises all three:
+.Pa US-ASCII
+as Latin-1,
+.Pa UTF-16
+as UTF-16LE, and anything else
+as binary, which is what a legacy eight-bit encoding such as
+.Pa KOI8-U
+needs if its bytes are to survive the round trip.
+.Pp
+The files under
+.Pa UTF-16
+are themselves UTF-8 on disk.
+The conversion happens on the way into the bundle and is undone on the
+way out, so the round trip returns them unchanged; a file already in
+UTF-16 could not round-trip, this program's business being to hand back
+decoded UTF-8.
+.Sh COMPATIBILITY
+The encoding recorded as value 2 in a module entry holds UTF-16LE code
+units, not UTF-8;
+.Nm
+reports it as
+.Dq Li utf16 .
+Tools that follow an older description of this format name it
+.Dq Li utf8
+and write its contents out verbatim, which yields text files no other
+program can read.
+.Sh SEE ALSO
+.Xr elf 3 ,
+.Xr elf_getshdrstrndx 3 ,
+.Xr gelf_getshdr 3 ,
+.Xr printf 3
+.Sh AUTHORS
+.An Mikhail Teterin
+.Sh CAVEATS
+Bytecode, module metadata and source maps stored alongside a module are
+reported under
+.Fl v
+but are not written out;
+only the module contents are extracted.

@@ -1,0 +1,20 @@
+# Build products
+/unhare
+/unhare.full
+/unhare.debug
+/unhare.1.gz
+*.o
+*.pieo
+
+# Written by mkbunfs at build time
+/bunfs.c
+/mkbunfs
+
+# make(1) dependency files
+/.depend
+/.depend.*
+
+# Editor leftovers
+*.swp
+*.swo
+*~
