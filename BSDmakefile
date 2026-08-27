@@ -9,7 +9,7 @@ WARNS?=	6
 
 PREFIX?=	/usr/local
 BINDIR?=	${PREFIX}/bin
-MANDIR?=	${PREFIX}/man/man
+MANDIR?=	${PREFIX}/share/man/man
 
 #
 # The tests/ tree is bundled into the program itself, so that "unhare -t"
