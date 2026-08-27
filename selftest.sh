@@ -24,7 +24,7 @@ tests=${3:-./tests}
 [ -d "$tests" ] || { echo "$0: no such directory: $tests" >&2; exit 1; }
 
 name=$(basename "$tests")
-work=$(mktemp -d -t unhare-selftest)
+work=$(mktemp -d "${TMPDIR:-/tmp}/unhare-selftest.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 
 fail() {
@@ -106,7 +106,7 @@ cmp -s "$work/real.txt" "$work/names.txt" ||
     sort > "$work/sz-said.txt"
 "$prog" -t -o "$work/szreal" >/dev/null || fail "extraction failed"
 (cd "$work/szreal" && find . -type f | sed 's|^\./||' | sort |
-    while read -r p; do echo "$p $(stat -f %z "$p")"; done) > "$work/sz-real.txt"
+    while read -r p; do echo "$p $(wc -c < "$p" | tr -d ' ')"; done) > "$work/sz-real.txt"
 cmp -s "$work/sz-said.txt" "$work/sz-real.txt" ||
     fail "-l reported sizes that a real run did not produce"
 
