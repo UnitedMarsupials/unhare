@@ -48,9 +48,8 @@
  * a Mach-O or PE binary from another platform -- do we fall back to
  * scanning the whole file.
  *
- * Either way the bytes come from libelf, which holds the file open for
- * us whatever kind it turns out to be, so nothing here is mapped and no
- * page arithmetic arises.
+ * ELF section bytes and the whole-file fallback come from libelf, whose
+ * raw-file view remains valid until elf_end(3).
  *
  * Failures exit with the code from <sysexits.h> that fits: EX_USAGE for
  * a malformed command line, EX_NOINPUT when the named file cannot be
@@ -83,11 +82,11 @@
 #include <fcntl.h>
 #include <gelf.h>
 #include <libelf.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <limits.h>
 #include <string.h>
 #include <sysexits.h>
 #include <unistd.h>
@@ -287,12 +286,7 @@ main(int argc, char *argv[])
 		if (elf_kind(elf) == ELF_K_ELF && verbose > 0)
 			warnx("%s: no bundle in a %s section, scanning whole "
 			    "file", file, BUN_SECTION);
-		/*
-		 * libelf holds the file whatever kind it turned out to
-		 * be, so the bytes are already to hand.  A bundle found
-		 * this way answers to section zero, there being no
-		 * section it came from.
-		 */
+		/* A scanned bundle answers to section zero. */
 		list = malloc(sizeof(*list));
 		if (list == NULL)
 			err(EX_OSERR, "malloc");

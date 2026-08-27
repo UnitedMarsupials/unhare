@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   freebsd:
-    name: FreeBSD
+    name: FreeBSD build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -27,11 +27,23 @@ jobs:
             make
             make test
 
+      - name: upload FreeBSD executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: unhare-freebsd
+          path: unhare
+          if-no-files-found: error
+          retention-days: 1
+
   linux:
-    name: Linux
+    name: Linux build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: install libelf
         run: |
@@ -44,3 +56,132 @@ jobs:
         run: |
           make
           make test
+
+      # The self-test bundle comes from mkbunfs.  Have Bun construct a
+      # native ELF input as an independent compatibility check too.
+      - name: test a real Bun executable
+        run: |
+          expected='unhare real Bun fixture: 毛泽东 💩🎭𠮷'
+          bun build --compile .github/fixtures/native.ts --outfile bun-native
+          file bun-native | grep -q 'ELF'
+          test "$(./bun-native)" = "$expected"
+          ./unhare -v -o bun-output bun-native 2>bun-unhare.log
+          grep -q 'found \.bun section' bun-unhare.log
+          extracted=$(find bun-output -type f)
+          test "$(find bun-output -type f | wc -l | tr -d ' ')" = 1
+          grep -q 'unhare real Bun fixture:' "$extracted"
+          iconv -f UTF-8 -t UTF-8 "$extracted" >/dev/null
+          node --check "$extracted"
+
+      - name: upload Linux executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: unhare-linux
+          path: |
+            unhare
+            bun-native
+          if-no-files-found: error
+          retention-days: 1
+
+  macos:
+    name: macOS build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Homebrew is part of GitHub's macOS runner image, and libelf has
+      # a bottle for the runner, so this does not build the library.
+      - name: install libelf
+        run: brew install libelf
+
+      # Apple provides GNU make 3.81.  libelf's headers live one level
+      # below its prefix, which GNUmakefile handles through this variable.
+      - name: build and test
+        run: |
+          libelf_prefix=$(brew --prefix libelf)
+          make LIBELF_PREFIX="$libelf_prefix"
+          make test LIBELF_PREFIX="$libelf_prefix"
+
+      # Have Bun itself construct the Mach-O input: the bundle generated
+      # by mkbunfs proves the scanner, but not compatibility with Bun.
+      - name: test a real Bun executable
+        run: |
+          expected='unhare real Bun fixture: 毛泽东 💩🎭𠮷'
+          bun build --compile .github/fixtures/native.ts --outfile bun-native
+          file bun-native | grep -q 'Mach-O'
+          test "$(./bun-native)" = "$expected"
+          ./unhare -v -o bun-output bun-native 2>bun-unhare.log
+          grep -q 'scanning whole file' bun-unhare.log
+          extracted=$(find bun-output -type f)
+          test "$(find bun-output -type f | wc -l | tr -d ' ')" = 1
+          grep -q 'unhare real Bun fixture:' "$extracted"
+          iconv -f UTF-8 -t UTF-8 "$extracted" >/dev/null
+          node --check "$extracted"
+
+      - name: upload macOS executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: unhare-macos
+          path: |
+            unhare
+            bun-native
+          if-no-files-found: error
+          retention-days: 1
+
+  cross:
+    name: ${{ matrix.name }} cross-test
+    needs: [freebsd, linux, macos]
+    strategy:
+      matrix:
+        include:
+          - name: Linux
+            platform: linux
+            runner: ubuntu-latest
+          - name: macOS
+            platform: macos
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: download native executables
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+
+      - name: install Linux libelf
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libelf-dev
+
+      - name: install macOS libelf
+        if: matrix.platform == 'macos'
+        run: brew install libelf
+
+      - name: extract foreign executables
+        env:
+          NATIVE: ${{ matrix.platform }}
+        run: sh .github/cross-test.sh "$NATIVE" artifacts tests
+
+  freebsd-cross:
+    name: FreeBSD cross-test
+    needs: [freebsd, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: download native executables
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+
+      - name: extract foreign executables
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          run: sh .github/cross-test.sh freebsd artifacts tests

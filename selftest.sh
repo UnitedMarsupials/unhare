@@ -32,10 +32,16 @@ fail() {
 	exit 1
 }
 
-# The bundle in our own .bun section, reached through -t.
+# The bundle in our own .bun section, reached through -t.  libelf does not
+# read Mach-O, so a macOS build necessarily reaches it through the fallback.
 "$prog" -t -v -o "$work/self" 2>"$work/self.log" >/dev/null
-grep -q 'found \.bun section' "$work/self.log" ||
-    fail "-t did not find the .bun section (fell back to scanning?)"
+if [ "$(uname -s)" = Darwin ]; then
+	grep -q 'scanning whole file' "$work/self.log" ||
+	    fail "-t did not scan its Mach-O executable"
+else
+	grep -q 'found \.bun section' "$work/self.log" ||
+	    fail "-t did not find the .bun section (fell back to scanning?)"
+fi
 diff -ru "$tests" "$work/self/$name" ||
     fail "-t output differs from $tests"
 

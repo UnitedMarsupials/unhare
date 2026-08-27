@@ -22,7 +22,19 @@ make install
 ```
 
 The `BSDmakefile` drives `bsd.prog.mk`, which does the heavy lifting.
-The only dependency is libelf from the base system.
+The only dependency is libelf.  It comes from the base system on FreeBSD;
+on Linux, install the distribution's development package.
+
+macOS's `/usr/bin/make` is GNU make 3.81, so it reads `GNUmakefile` without
+another make implementation being installed.  Apple supplies neither
+libelf nor its headers.  After building libelf separately, pass its install
+prefix to GNU make, for example `make LIBELF_PREFIX=/path/to/libelf`.
+The macOS SDK does not declare `reallocarray(3)`, so `compat.h` supplies a
+local overflow-checking implementation there.
+
+The GitHub Actions macOS job installs Homebrew's prebuilt libelf bottle on
+the disposable runner and passes its prefix to GNU make.  This is a CI
+dependency only; building locally does not require Homebrew.
 
 Installation goes under `PREFIX`, which defaults to `/usr/local` -- so
 the program lands in `/usr/local/bin` and its manual page in
@@ -209,7 +221,7 @@ script modules of the binaries tested, the rule is exact:
 
 Not "whatever does not fit in Latin-1": of the 76 utf16 modules, 64
 contain nothing above U+00FF and would have fitted in latin1 easily --
-32 of them reach no further than U+00A7 `ง`.  Only 12 go past the
+32 of them reach no further than U+00A7 `ยง`.  Only 12 go past the
 Latin-1 range, as far as U+1F50D.  That is JavaScriptCore's string
 representation showing through: Bun decodes the source as UTF-8, and the
 decoder yields an 8-bit string only for pure ASCII, never narrowing a
@@ -267,21 +279,26 @@ conversions are accepted; a pattern arrives from the command line, so
 anything it might do beyond spelling a number is refused rather than
 passed to `printf`.
 
-**The file is already mapped.**  `elf_rawdata()` returns a pointer into
+**An ELF file is already mapped.**  `elf_rawdata()` returns a pointer into
 libelf's own image of the file rather than a copy -- measurably so:
 `d_buf - elf_rawfile() == sh_offset` exactly.  So there is nothing for
-this program to map, and the page arithmetic an `mmap` of its own would
-need is gone with it.  The cost is that the ELF handle must outlive the
-extraction, since the bytes die with `elf_end()`.
+this program to map when reading an ELF section.  The cost is that the ELF
+handle must outlive the extraction, since the bytes die with `elf_end()`.
 
 This extends further than it first appears: `elf_rawfile()` returns the
 whole file even when it is not an ELF object at all.  `elf_begin()` on
 `/etc/motd` yields a descriptor of kind `ELF_K_NONE`, and `elf_rawfile()`
-still hands back its bytes.  So the fallback scan needs no mapping
-either, and this program calls neither `mmap` nor `munmap` anywhere.
+still hands back its bytes on the ELF implementations tested.
+
+The standalone libelf 0.8.13 available for macOS behaves the same way.
+Its raw-file view can be scanned across an entire signed Bun 1.4.0 Mach-O
+executable, and it finds the bundle preceding the code signature.  The same
+macOS build also reads `.bun` sections from ELF executables built on Linux
+and FreeBSD.  The program calls neither `mmap` nor `munmap` itself.
+
 That fallback is not hypothetical: Bun builds Mach-O on macOS and PE on
-Windows, and the trailer search knows nothing of ELF, so those unpack
-here too.
+Windows, and the trailer search knows nothing of ELF, so those unpack here
+too.
 
 ### Other observations
 
@@ -322,6 +339,21 @@ surrogates, high surrogate at EOF, UTF-8 length boundaries, odd length).
 Roughly 1400 fuzz cases -- random corruption, offsets-header corruption,
 truncation, and cases forcing the UTF-16 path -- produced no crashes.
 
+On Linux and macOS CI, the current official Bun release compiles
+`.github/fixtures/native.ts` into native ELF and Mach-O executables.  Each
+build runs its native fixture, extracts it, checks that the output is valid
+UTF-8 and asks Node.js to parse the extracted JavaScript.
+
+Each operating-system job first builds and tests its own `unhare`, then
+uploads it as a workflow artifact.  Linux and macOS include their real Bun
+executable too.  After all three builds finish, a second job on each system
+downloads the artifacts and uses its native `unhare` to extract the other
+systems' executables.  The synthetic bundles are compared byte-for-byte with
+`tests/`; the Bun-produced modules are checked for their marker and encoding,
+and parsed with Node.js where it is installed.  This exercises ELF section
+lookup and Mach-O fallback on every host, including FreeBSD reading both real
+Bun formats.  The transient artifacts use GitHub's minimum one-day retention.
+
 A note for anyone writing test fixtures: real Bun labels ASCII content
 Latin-1 (encoding 1), never 2.  A fixture that says 2 will be decoded as
 UTF-16 and mangled, correctly.
@@ -342,6 +374,12 @@ same bundle into a file with no ELF structure around it.
 bundle, so breaking the libelf lookup altogether changes nothing the
 output can show -- the fallback quietly picks up the slack.  The test
 therefore also checks, from `-v`, which path each case actually took.
+
+On macOS the generated array is placed in the Mach-O section
+`__DATA,.bun`, since a Mach-O section attribute must name its segment too.
+libelf does not read Mach-O, so `-t` necessarily reaches that bundle through
+the whole-file fallback there; the self-test can check the libelf section
+path only on an ELF build host.
 
 **The filler has to be hostile on purpose.**  The buried fixture puts
 the payload between two blocks of filler full of newlines and near

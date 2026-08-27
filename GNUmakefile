@@ -19,6 +19,14 @@ CFLAGS +=	-Wall -Wextra
 LDLIBS +=	-lelf
 INSTALL ?=	install
 
+# libelf may live outside the compiler's default search path.  This is
+# normally the case on macOS, which does not provide the library itself.
+ifneq ($(LIBELF_PREFIX),)
+CPPFLAGS +=	-I$(LIBELF_PREFIX)/include \
+		-I$(LIBELF_PREFIX)/include/libelf
+LDFLAGS +=	-L$(LIBELF_PREFIX)/lib
+endif
+
 # The tests/ tree is bundled into the program itself; see BSDmakefile.
 TESTDIR =	tests
 TESTFILES :=	$(shell find $(TESTDIR) -type f)
@@ -51,3 +59,4 @@ install: $(PROG)
 
 clean:
 	rm -f $(PROG) $(OBJS) mkbunfs bunfs.c
+	rm -rf $(PROG).dSYM mkbunfs.dSYM

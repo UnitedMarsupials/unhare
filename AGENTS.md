@@ -14,6 +14,12 @@ established it.  Do not leave that knowledge in a commit message or in
 the conversation; it belongs in the README where the next reader will
 find it.
 
+## Never push unless asked
+
+Do not push commits or tags to any remote unless the user explicitly asks
+you to push them.  Permission to edit, test or commit is not permission to
+push.
+
 ## Style
 
 The code follows FreeBSD `style(9)`.  Match the surrounding code:

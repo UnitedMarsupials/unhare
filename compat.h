@@ -17,8 +17,10 @@
 #ifndef UNHARE_COMPAT_H_
 #define	UNHARE_COMPAT_H_
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef nitems
@@ -44,6 +46,25 @@
 #if defined(__GLIBC__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
     defined(__OpenBSD__) || defined(__DragonFly__)
 #define	HAVE_MEMRCHR	1
+#endif
+
+/*
+ * The macOS SDK does not declare reallocarray(3).  Keep the replacement
+ * under a private name so a future SDK declaration cannot conflict with
+ * this header.
+ */
+#if defined(__APPLE__)
+static inline void *
+compat_reallocarray(void *ptr, size_t nmemb, size_t size)
+{
+
+	if (size != 0 && nmemb > SIZE_MAX / size) {
+		errno = ENOMEM;
+		return (NULL);
+	}
+	return (realloc(ptr, nmemb * size));
+}
+#define	reallocarray	compat_reallocarray
 #endif
 
 static inline uint16_t
