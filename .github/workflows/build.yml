@@ -1,0 +1,24 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  freebsd:
+    name: FreeBSD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Everything the build wants is in the base system: clang, libelf,
+      # bsd.prog.mk, objcopy and xz.  There is nothing to install.
+      - name: build and test
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          run: |
+            set -e
+            make
+            make test
