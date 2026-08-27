@@ -38,6 +38,7 @@ bunfs.c: mkbunfs $(TESTFILES)
 	./mkbunfs -c $@ $(TESTDIR)
 
 bunfs.o: bunfs.c
+unhare.o mkbunfs: compat.h
 
 test: $(PROG) mkbunfs
 	@sh ./selftest.sh ./$(PROG) ./mkbunfs $(TESTDIR)

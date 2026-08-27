@@ -60,11 +60,22 @@
  * memory or an answer.
  */
 
+/*
+ * asprintf(3), memrchr(3), reallocarray(3) and strsep(3) are behind
+ * this on glibc; it has to precede every header.
+ */
+#if !defined(_GNU_SOURCE) && !defined(__FreeBSD__)
+#define	_GNU_SOURCE
+#endif
+
 #include <sys/types.h>
-#include <sys/endian.h>
-#include <sys/param.h>
 #include <sys/stat.h>
+#if defined(__FreeBSD__)
 #include <sys/sysctl.h>
+#endif
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 #include <ctype.h>
 #include <err.h>
@@ -76,9 +87,12 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #include <sysexits.h>
 #include <unistd.h>
+
+#include "compat.h"
 
 #define	BUN_SECTION	".bun"
 #define	BUN_TRAILER	"\n---- Bun! ----\n"
@@ -349,13 +363,20 @@ static const char *
 self_path(const char *argv0)
 {
 	static char buf[PATH_MAX];
+#if defined(__FreeBSD__)
 	size_t len;
 	int mib[4];
+#elif defined(__linux__)
+	ssize_t n;
+#elif defined(__APPLE__)
+	uint32_t len;
+#endif
 
 	if (argv0 != NULL && strchr(argv0, '/') != NULL &&
 	    access(argv0, R_OK) == 0)
 		return (argv0);
 
+#if defined(__FreeBSD__)
 	mib[0] = CTL_KERN;
 	mib[1] = KERN_PROC;
 	mib[2] = KERN_PROC_PATHNAME;
@@ -363,6 +384,19 @@ self_path(const char *argv0)
 	len = sizeof(buf);
 	if (sysctl(mib, 4, buf, &len, NULL, 0) == -1)
 		err(EX_OSERR, "cannot find the path to this program");
+#elif defined(__linux__)
+	n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+	if (n == -1)
+		err(EX_OSERR, "cannot find the path to this program");
+	buf[n] = '\0';
+#elif defined(__APPLE__)
+	len = sizeof(buf);
+	if (_NSGetExecutablePath(buf, &len) != 0)
+		errx(EX_OSERR, "cannot find the path to this program");
+#else
+	errx(EX_USAGE, "-t needs to be invoked by a path on this "
+	    "system");
+#endif
 
 	return (buf);
 }
@@ -549,8 +583,10 @@ expand_pattern(const char *pattern, size_t index)
 	char *out;
 	int len;
 
+#if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wformat-nonliteral"
+#endif
 	len = snprintf(NULL, 0, pattern, (unsigned int)index);
 	if (len < 0)
 		err(EX_OSERR, "snprintf");
@@ -558,7 +594,9 @@ expand_pattern(const char *pattern, size_t index)
 	if (out == NULL)
 		err(EX_OSERR, "malloc");
 	snprintf(out, (size_t)len + 1, pattern, (unsigned int)index);
+#if defined(__clang__)
 #pragma clang diagnostic pop
+#endif
 
 	return (out);
 }
@@ -583,7 +621,7 @@ find_trailer(const uint8_t *base, size_t len)
 	 */
 	n = len - BUN_TRAILER_LEN + 1;
 	while (n > 0) {
-		p = memrchr(base, BUN_TRAILER[0], n);
+		p = lastbyte(base, BUN_TRAILER[0], n);
 		if (p == NULL)
 			break;
 		if (memcmp(p, BUN_TRAILER, BUN_TRAILER_LEN) == 0)
@@ -597,19 +635,19 @@ static void
 decode_sliceptr(const uint8_t *p, struct sliceptr *sp)
 {
 
-	sp->offset = le32dec(p);
-	sp->len = le32dec(p + 4);
+	sp->offset = getle32(p);
+	sp->len = getle32(p + 4);
 }
 
 static void
 decode_offsets(const uint8_t *p, struct offsets *o)
 {
 
-	o->byte_count = le64dec(p);
+	o->byte_count = getle64(p);
 	decode_sliceptr(p + 8, &o->modules);
-	o->entry_id = le32dec(p + 16);
+	o->entry_id = getle32(p + 16);
 	decode_sliceptr(p + 20, &o->argv);
-	o->flags = le32dec(p + 28);
+	o->flags = getle32(p + 28);
 }
 
 static void
@@ -753,9 +791,9 @@ static char *
 safe_path(const char *outdir, const char *name)
 {
 	char **comp;
-	char *copy, *path, *seg, *state;
-	const char *sep;
-	size_t depth, i, len;
+	char *copy, *p, *path, *seg, *state;
+	size_t depth, i, len, n;
+	bool slash;
 
 	copy = strdup(name);
 	if (copy == NULL)
@@ -793,15 +831,26 @@ safe_path(const char *outdir, const char *name)
 	if (path == NULL)
 		err(EX_OSERR, "malloc");
 
-	strlcpy(path, outdir, len);
+	/*
+	 * Assembled by hand rather than with strlcat(3), which glibc
+	 * only came by lately.  The length is known exactly, so there
+	 * is nothing here for a bounded copy to guard against.
+	 */
+	n = strlen(outdir);
+	memcpy(path, outdir, n);
+	p = path + n;
 
 	/* A directory spelt with a trailing slash needs no second one. */
-	sep = path[0] != '\0' && path[strlen(path) - 1] == '/' ? "" : "/";
+	slash = n != 0 && outdir[n - 1] == '/' ? false : true;
 	for (i = 0; i < depth; i++) {
-		strlcat(path, sep, len);
-		strlcat(path, comp[i], len);
-		sep = "/";
+		if (slash)
+			*p++ = '/';
+		slash = true;
+		n = strlen(comp[i]);
+		memcpy(p, comp[i], n);
+		p += n;
 	}
+	*p = '\0';
 
 	free(comp);
 	free(copy);
@@ -941,9 +990,9 @@ utf16_decode(const char *path, const uint8_t *data, size_t len,
 
 	o = 0;
 	for (i = 0; i < n; i++) {
-		cp = le16dec(data + i * 2);
+		cp = getle16(data + i * 2);
 		if (cp >= 0xd800 && cp <= 0xdbff && i + 1 < n) {
-			lo = le16dec(data + (i + 1) * 2);
+			lo = getle16(data + (i + 1) * 2);
 			if (lo >= 0xdc00 && lo <= 0xdfff) {
 				cp = 0x10000 + ((cp - 0xd800) << 10) +
 				    (lo - 0xdc00);

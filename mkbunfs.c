@@ -32,9 +32,15 @@
  * decoded UTF-8.
  */
 
+/*
+ * asprintf(3) and reallocarray(3) are behind this on glibc; it has
+ * to precede every header.
+ */
+#if !defined(_GNU_SOURCE) && !defined(__FreeBSD__)
+#define	_GNU_SOURCE
+#endif
+
 #include <sys/types.h>
-#include <sys/endian.h>
-#include <sys/param.h>
 #include <sys/stat.h>
 
 #include <dirent.h>
@@ -46,6 +52,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "compat.h"
 
 #define	BUN_TRAILER	"\n---- Bun! ----\n"
 #define	BUN_TRAILER_LEN	16
@@ -360,12 +368,12 @@ utf16le(const uint8_t *data, size_t len, size_t *lenp)
 		if (s > end)
 			errx(1, "truncated UTF-8 sequence");
 		if (cp < 0x10000) {
-			le16enc(buf + o, (uint16_t)cp);
+			putle16(buf + o, (uint16_t)cp);
 			o += 2;
 		} else {
 			cp -= 0x10000;
-			le16enc(buf + o, (uint16_t)(0xd800 + (cp >> 10)));
-			le16enc(buf + o + 2,
+			putle16(buf + o, (uint16_t)(0xd800 + (cp >> 10)));
+			putle16(buf + o + 2,
 			    (uint16_t)(0xdc00 + (cp & 0x3ff)));
 			o += 4;
 		}
@@ -422,10 +430,10 @@ make_payload(size_t *lenp)
 	/* Module table: six slice pointers, then the four enums. */
 	for (i = 0; i < nfiles; i++) {
 		p = buf + table + i * MODULE_SIZE;
-		le32enc(p + 0, ent[i].name_off);
-		le32enc(p + 4, ent[i].name_len);
-		le32enc(p + 8, ent[i].body_off);
-		le32enc(p + 12, ent[i].body_len);
+		putle32(p + 0, ent[i].name_off);
+		putle32(p + 4, ent[i].name_len);
+		putle32(p + 8, ent[i].body_off);
+		putle32(p + 12, ent[i].body_len);
 		/* source_map, bytecode, module_info, origin stay zero. */
 		p[48] = files[i].encoding;
 		p[49] = files[i].loader;
@@ -435,13 +443,13 @@ make_payload(size_t *lenp)
 
 	/* Offsets header, then the trailer. */
 	p = buf + blob;
-	le64enc(p, (uint64_t)blob);
-	le32enc(p + 8, (uint32_t)table);
-	le32enc(p + 12, (uint32_t)(nfiles * MODULE_SIZE));
-	le32enc(p + 16, 0);			/* entry point */
-	le32enc(p + 20, 0);			/* argv offset */
-	le32enc(p + 24, 0);			/* argv length */
-	le32enc(p + 28, 0);			/* flags */
+	putle64(p, (uint64_t)blob);
+	putle32(p + 8, (uint32_t)table);
+	putle32(p + 12, (uint32_t)(nfiles * MODULE_SIZE));
+	putle32(p + 16, 0);			/* entry point */
+	putle32(p + 20, 0);			/* argv offset */
+	putle32(p + 24, 0);			/* argv length */
+	putle32(p + 28, 0);			/* flags */
 	memcpy(buf + blob + OFFSETS_SIZE, BUN_TRAILER, BUN_TRAILER_LEN);
 
 	free(ent);
