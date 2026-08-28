@@ -2,7 +2,8 @@
 #
 # Use the native unhare artifact to inspect executables built by the other
 # jobs.  Linux and FreeBSD inputs must take the ELF section path; macOS inputs
-# must take the format-independent whole-file fallback.
+# must take the format-independent whole-file fallback.  Every artifact but
+# FreeBSD's also carries a Bun-built executable, checked the same way.
 
 set -e
 
@@ -28,7 +29,17 @@ for platform in freebsd linux macos; do
 	diff -ru "$tests" "$output/tests"
 
 	input="$artifacts/unhare-$platform/bun-native"
-	[ -f "$input" ] || continue
+	if [ ! -f "$input" ]; then
+		# Bun builds nothing for FreeBSD, so that artifact carries
+		# no fixture.  Anywhere else a missing one means the upload
+		# lost it, and skipping quietly would leave the rest of
+		# this untested while still reporting success.
+		if [ "$platform" = freebsd ]; then
+			continue
+		fi
+		echo "$input: no Bun fixture in the artifact" >&2
+		exit 1
+	fi
 	output="cross-output/$platform/bun"
 	log="cross-$platform-bun.log"
 	./"$prog" -v -o "$output" "$input" 2>"$log"
