@@ -56,6 +56,23 @@ check it with `mandoc -T lint unhare.1` before you are done.  Behaviour
 worth explaining to a user goes in the manual page; behaviour worth
 explaining to a maintainer goes in `README.md`.
 
+## The changelog is part of a release
+
+`CHANGELOG.md` records what changed between releases, newest version
+first, under a `## <version> (YYYY-MM-DD)` heading.  A change a user
+would notice -- a new option, a changed default, a system that now
+builds, a bug that was fixed -- gets a line there in the commit that
+makes it.  Do not save them up for release day: whoever cuts the release
+should find the entry already written.
+
+Write it for someone deciding whether to upgrade rather than for someone
+reading the diff, and say what the program does differently now.  Detail
+only a maintainer needs belongs in `README.md`, and why the change was
+made belongs in the commit message.
+
+Work with no visible effect -- a refactor, a comment, a test -- needs no
+entry.
+
 ## Testing
 
 Do not trust a change because it compiles.  This program parses
