@@ -80,6 +80,7 @@
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <fnmatch.h>
 #include <gelf.h>
 #include <libelf.h>
 #include <limits.h>
@@ -148,11 +149,16 @@ struct module {
 static int	 force;
 static int	 listonly;
 static int	 verbose;
+static const char
+		**excludes;		/* name patterns given by -x */
+static size_t	 nexcludes;
 static size_t	*wanted;		/* section indices asked for by -s */
 static size_t	 nwanted;
 
+static void	 add_exclude(const char *);
 static char	*clean_name(const char *);
 static char	*escaped(const char *);
+static bool	 excluded(const char *);
 static void	 decode_module(const uint8_t *, struct module *);
 static void	 decode_offsets(const uint8_t *, struct offsets *);
 static void	 decode_sliceptr(const uint8_t *, struct sliceptr *);
@@ -170,8 +176,7 @@ static const char
 		*format_name(uint8_t);
 static const char
 		*loader_name(uint8_t);
-static char	*module_path(const uint8_t *, const struct module *,
-		    const char *);
+static char	*module_name(const uint8_t *, const struct module *);
 static void	 make_parents(const char *, const char *);
 static void	 make_path(const char *);
 static int	 open_input(const char *);
@@ -200,7 +205,7 @@ main(int argc, char *argv[])
 	self = argv[0];
 	pattern = ".";
 	tflag = 0;
-	while ((ch = getopt(argc, argv, "fhlo:s:tv")) != -1) {
+	while ((ch = getopt(argc, argv, "fhlo:s:tvx:")) != -1) {
 		switch (ch) {
 		case 'f':
 			force = 1;
@@ -222,6 +227,9 @@ main(int argc, char *argv[])
 			break;
 		case 'v':
 			verbose++;
+			break;
+		case 'x':
+			add_exclude(optarg);
 			break;
 		default:
 			usage(EX_USAGE);
@@ -341,8 +349,8 @@ usage(int status)
 {
 
 	fprintf(status == 0 ? stdout : stderr,
-	    "usage: unhare [-flv] [-o pattern] [-s section] file\n"
-	    "       unhare -t [-flv] [-o pattern] [-s section]\n"
+	    "usage: unhare [-flv] [-o pattern] [-s section] [-x pattern] file\n"
+	    "       unhare -t [-flv] [-o pattern] [-s section] [-x pattern]\n"
 	    "       unhare -h\n");
 	exit(status);
 }
@@ -501,6 +509,47 @@ find_bundles(Elf *elf, const char *file, struct bundle **listp)
 
 	*listp = list;
 	return (n);
+}
+
+/* Note a name pattern given by -x. */
+static void
+add_exclude(const char *pattern)
+{
+
+	excludes = reallocarray(excludes, nexcludes + 1, sizeof(*excludes));
+	if (excludes == NULL)
+		err(EX_OSERR, "reallocarray");
+	excludes[nexcludes++] = pattern;
+}
+
+/*
+ * Whether a module name is covered by any -x pattern.
+ *
+ * fnmatch(3) is asked for no FNM_PATHNAME, so that a "*" spans the
+ * separators and "*.node" reaches an entry however deeply it is buried,
+ * and each pattern is tried again at every component boundary, so that
+ * one leading with a directory name catches a nested tree as readily
+ * as a top-level one.  Both are how tar(1) reads --exclude, and a
+ * pattern written for that one is expected to mean the same here.
+ */
+static bool
+excluded(const char *name)
+{
+	const char *p;
+	size_t i;
+
+	for (i = 0; i < nexcludes; i++) {
+		p = name;
+		for (;;) {
+			if (fnmatch(excludes[i], p, 0) == 0)
+				return (true);
+			p = strchr(p, '/');
+			if (p == NULL)
+				break;
+			p++;
+		}
+	}
+	return (false);
 }
 
 /* Note a section asked for by -s. */
@@ -1032,24 +1081,24 @@ write_utf16(const char *path, const uint8_t *data, size_t len)
 
 
 /*
- * Where a module unpacks to, or NULL if its name would escape the output
- * directory.  The caller frees the result.
+ * The name a module unpacks under: what the bundle records, with Bun's
+ * virtual filesystem prefix stripped and the separators turned the
+ * host's way.  This is the name -x patterns are matched against, and
+ * the one safe_path() joins to the output directory.  The caller frees
+ * the result.
  */
 static char *
-module_path(const uint8_t *blob, const struct module *m, const char *outdir)
+module_name(const uint8_t *blob, const struct module *m)
 {
-	char *clean, *name, *path;
+	char *clean, *raw;
 
-	name = strndup((const char *)blob + m->name.offset, m->name.len);
-	if (name == NULL)
+	raw = strndup((const char *)blob + m->name.offset, m->name.len);
+	if (raw == NULL)
 		err(EX_OSERR, "strndup");
 
-	clean = clean_name(name);
-	path = safe_path(outdir, clean);
-
-	free(clean);
-	free(name);
-	return (path);
+	clean = clean_name(raw);
+	free(raw);
+	return (clean);
 }
 
 /*
@@ -1062,7 +1111,7 @@ extract(const uint8_t *region, size_t rlen, const char *outdir)
 	struct offsets o;
 	const uint8_t *blob, *entry, *table, *trailer;
 	uint8_t *decoded;
-	char *name, *path, *shown;
+	char *clean, *name, *path, *shown;
 	size_t nwrote;
 	uintmax_t total;
 	uint32_t i, nmodules, written;
@@ -1107,14 +1156,22 @@ extract(const uint8_t *region, size_t rlen, const char *outdir)
 	 * Look for anything already in the way before writing a single
 	 * file, so that a run which would clobber something leaves the
 	 * directory as it found it rather than stopping halfway with the
-	 * job half done.
+	 * job half done.  A module -x skips is passed over here as well:
+	 * a file in the way of something we were told not to write is in
+	 * the way of nothing.
 	 */
 	if (!force && !listonly)
 		for (i = 0; i < nmodules; i++) {
 			decode_module(table + (size_t)i * MODULE_SIZE, &m);
 			slice_check(&m.name, o.byte_count, "module name");
 
-			path = module_path(blob, &m, outdir);
+			clean = module_name(blob, &m);
+			if (excluded(clean)) {
+				free(clean);
+				continue;
+			}
+			path = safe_path(outdir, clean);
+			free(clean);
 			if (path == NULL)
 				continue;
 			if (access(path, F_OK) == 0)
@@ -1136,7 +1193,19 @@ extract(const uint8_t *region, size_t rlen, const char *outdir)
 		slice_check(&m.bytecode_origin, o.byte_count,
 		    "module bytecode origin");
 
-		path = module_path(blob, &m, outdir);
+		clean = module_name(blob, &m);
+		if (excluded(clean)) {
+			if (verbose > 1) {
+				shown = escaped(clean);
+				warnx("skipping module %u: \"%s\" is "
+				    "excluded", i, shown);
+				free(shown);
+			}
+			free(clean);
+			continue;
+		}
+		path = safe_path(outdir, clean);
+		free(clean);
 		if (path == NULL) {
 			name = strndup((const char *)blob + m.name.offset,
 			    m.name.len);

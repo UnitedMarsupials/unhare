@@ -3,7 +3,7 @@
 .\"
 .\" Copyright (c) 2026 Mikhail Teterin
 .\"
-.Dd August 27, 2026
+.Dd August 28, 2026
 .Dt UNHARE 1
 .Os
 .Sh NAME
@@ -14,12 +14,14 @@
 .Op Fl flv
 .Op Fl o Ar pattern
 .Op Fl s Ar section
+.Op Fl x Ar pattern
 .Ar file
 .Nm
 .Fl t
 .Op Fl flv
 .Op Fl o Ar pattern
 .Op Fl s Ar section
+.Op Fl x Ar pattern
 .Nm
 .Fl h
 .Sh DESCRIPTION
@@ -187,6 +189,39 @@ error, so that a single
 .Fl v
 leaves a list of names fit to pipe
 onward.
+.It Fl x Ar pattern
+Skip the modules whose names match
+.Ar pattern ,
+which may be given more than once to name several.
+A module matching any of them is neither written nor listed, as though
+the bundle did not hold it.
+.Pp
+.Ar pattern
+is a shell glob, matched by
+.Xr fnmatch 3
+against the name the bundle records, with the virtual filesystem prefix
+stripped and before the
+.Fl o
+directory is prepended \(em the name
+.Fl l
+lists, less that directory.
+The rules are those of the
+.Fl Fl exclude
+option of
+.Xr tar 1 ,
+so a pattern written for that one means the same here:
+.Ql *
+spans the separators, so that
+.Ql *.node
+reaches an entry however deeply it is buried, and each pattern is tried
+again at every component boundary, so that
+.Ql node_modules/*
+catches a nested tree as readily as a top-level one.
+.Pp
+A file already in the way of a module that
+.Fl x
+skips is in the way of
+nothing, and no longer a reason to refuse the whole extraction.
 .El
 .Sh EXIT STATUS
 .Nm
@@ -236,6 +271,12 @@ Unpack only the bundle in section 29:
 unhare -s 29 -o app-files ./app
 .Ed
 .Pp
+Unpack an application without its native addons, and without anything
+bundled from a node_modules tree:
+.Bd -literal -offset indent
+unhare -o app-files -x '*.node' -x 'node_modules/*' ./app
+.Ed
+.Pp
 Unpack the bundle this program carries:
 .Bd -literal -offset indent
 unhare -t -o /tmp/unhare-tests
@@ -282,8 +323,10 @@ Tools that follow an older description of this format name it
 and write its contents out verbatim, which yields text files no other
 program can read.
 .Sh SEE ALSO
+.Xr tar 1 ,
 .Xr elf 3 ,
 .Xr elf_getshdrstrndx 3 ,
+.Xr fnmatch 3 ,
 .Xr gelf_getshdr 3 ,
 .Xr printf 3
 .Sh AUTHORS

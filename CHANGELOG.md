@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1 (2026-08-28)
+
+- Add `-x pattern`, which skips the modules whose names match a shell
+  glob, the way `tar --exclude` does.  It may be given more than once,
+  and a file in the way of a module it skips no longer stops the run.
+
 ## 1.0.1 (2026-08-27)
 
 - Add macOS support using the system GNU make and a separately installed

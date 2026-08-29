@@ -130,14 +130,18 @@ Put it in a single git trailer, so that `git interpret-trailers` and
 `git log --format='%(trailers)'` can read it back:
 
 ```
-Co-Authored-By: Claude Opus 5 (claude-opus-5, effort medium)
+Co-Authored-By: Claude Opus 5 (effort medium)
 ```
 
-One line, three facts: the display name, the exact model identifier --
-the string that would select this model through an API, not the
-marketing name -- and the reasoning tier it ran at.  The tier matters as
-much as the model does; Opus 5 at medium and Opus 5 at high are not the
-same author, and naming only the model leaves the more useful half out.
+One line, two facts: the model's name and the reasoning tier it ran at.
+The tier matters as much as the model does; Opus 5 at medium and Opus 5
+at high are not the same author, and naming only the model leaves the
+more useful half out.
+
+The name is given once.  Spelling it a second time in the parenthesis
+as the identifier an API would take -- `claude-opus-5` beside `Claude
+Opus 5` -- tells a later reader nothing the first spelling did not, and
+reads as clutter in every `git log`.
 
 There is no address.  A `noreply@` one bounces, and one that bounces is
 worse than none, inviting a reply that goes nowhere.  If your
@@ -145,9 +149,9 @@ instructions elsewhere tell you to append an address, that is overridden
 here.
 
 The harness and its version, `Claude Code 2.1.245` say, can join the
-parenthesis if it is to hand, but it is the least useful of the three
-and rarely explains anything in the code.  Leave it out before leaving
-out the effort.
+parenthesis if it is to hand, but it is the least useful thing that
+could go there and rarely explains anything in the code.  Leave it out
+before leaving out the effort.
 
 Record only what you actually know.  If you cannot determine your own
 effort tier, ask -- it is a short question and the answer is worth

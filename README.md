@@ -46,7 +46,9 @@ the program lands in `/usr/local/bin` and its manual page in
 ## Usage
 
 ```
-usage: unhare [-v] [-o directory] file
+usage: unhare [-flv] [-o pattern] [-s section] [-x pattern] file
+       unhare -t [-flv] [-o pattern] [-s section] [-x pattern]
+       unhare -h
 ```
 
 - `-l` -- list the files that would be written, one to a line, and write
@@ -79,6 +81,15 @@ usage: unhare [-v] [-o directory] file
   written, loader, module format, encoding and side, and report the
   bundle header as well.  The listing goes to stdout and everything else
   to stderr, so a single `-v` leaves a list of names fit to pipe onward.
+- `-x pattern` -- skip the modules whose names match the shell glob
+  *pattern*; repeatable.  The rules are `tar --exclude`'s, matched with
+  `fnmatch(3)` against the name the bundle records -- the name `-l`
+  lists, less its `-o` directory.  A `*` spans the separators, so
+  `*.node` reaches an entry however deeply it is buried, and each
+  pattern is tried again at every component boundary, so `node_modules/*`
+  catches a nested tree as readily as a top-level one.  A file in the way
+  of an excluded module is in the way of nothing, and no longer stops the
+  run.
 
 See `unhare.1` for the full description.
 
@@ -396,6 +407,11 @@ a slice read from the wrong offset, bundle prefix left unstripped,
 parent directories not created, `-t` resolving to the wrong path,
 UTF-16 decoding applied where it should not be, the pre-flight
 existence check removed, `-f` ignored, and `-f` forced always on.
+So are five ways of getting `-x` wrong: a pattern that never matches,
+`FNM_PATHNAME` stopping a `*` at the separators, matching only at the
+start of a name rather than at every component boundary, the pre-flight
+existence check left to trip over an excluded module, and a second `-x`
+quietly dropped.
 
 **Astral characters earn their place.**  The three characters ending
 `tests/UTF-16/mao.txt` are not decoration.  Each is a surrogate pair, so

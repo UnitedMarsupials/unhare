@@ -138,5 +138,69 @@ done
 "$prog" -t -l -s 4294967295 -o 'x%u' >/dev/null 2>&1 &&
     fail "-s accepted a section that is not here"
 
+# -x skips the modules whose names match, in the manner of tar's
+# --exclude.  What it matches is the name inside the bundle -- the name
+# a listing shows, less its -o directory -- so a full listing is the
+# answer the excluded runs are held against.
+"$prog" -t -l -o "$work/x" | sed "s|^$work/x/||" | sort > "$work/x-all.txt"
+count=$(wc -l < "$work/x-all.txt" | tr -d ' ')
+first=$(sed -n 1p "$work/x-all.txt")
+second=$(sed -n 2p "$work/x-all.txt")
+[ "$count" -ge 3 ] ||
+    fail "the bundled tree is too small to exercise -x"
+
+# One pattern can reach the whole tree.
+"$prog" -t -l -o "$work/x" -x '*.txt' > "$work/x-none.txt" ||
+    fail "-x '*.txt' failed"
+[ -s "$work/x-none.txt" ] &&
+    fail "-x '*.txt' left something in the listing"
+
+# A "*" spans the separators: a pattern anchored at the root of the
+# bundle still reaches a name two components deeper.  FNM_PATHNAME would
+# stop that, and no other check here would notice.
+"$prog" -t -l -o "$work/x" -x "${first%%/*}/*.txt" > "$work/x-deep.txt" ||
+    fail "-x '${first%%/*}/*.txt' failed"
+[ -s "$work/x-deep.txt" ] &&
+    fail "a \"*\" in -x did not span the separators"
+
+# An exact name excludes that module and no other.
+"$prog" -t -l -o "$work/x" -x "$first" | sed "s|^$work/x/||" | sort \
+    > "$work/x-one.txt"
+grep -qx "$first" "$work/x-one.txt" &&
+    fail "-x did not exclude $first"
+[ "$(wc -l < "$work/x-one.txt" | tr -d ' ')" = "$((count - 1))" ] ||
+    fail "-x $first excluded more than itself"
+
+# Each pattern is tried again at every component boundary, so the same
+# name with its leading directory cut off still matches.  This is the
+# one case an anchored match would fail.
+"$prog" -t -l -o "$work/x" -x "${first#*/}" | sed "s|^$work/x/||" | sort \
+    > "$work/x-tail.txt"
+cmp -s "$work/x-one.txt" "$work/x-tail.txt" ||
+    fail "-x matched only at the start of the name"
+
+# -x may be given more than once, and every pattern counts.
+"$prog" -t -l -o "$work/x" -x "$first" -x "$second" > "$work/x-two.txt"
+[ "$(wc -l < "$work/x-two.txt" | tr -d ' ')" = "$((count - 2))" ] ||
+    fail "a second -x was not honoured"
+
+# A real run writes everything the listing kept, and not what it lost.
+"$prog" -t -o "$work/xreal" -x "$first" >/dev/null ||
+    fail "-x extraction failed"
+[ -e "$work/xreal/$first" ] &&
+    fail "-x wrote the module it was told to skip"
+[ "$(find "$work/xreal" -type f | wc -l | tr -d ' ')" = "$((count - 1))" ] ||
+    fail "-x extraction wrote the wrong number of files"
+
+# A file in the way of an excluded module is in the way of nothing, so
+# the run must go through rather than refuse to start -- and must leave
+# that file as it found it.
+mkdir -p "$work/xclob/$(dirname "$first")"
+printf 'untouched\n' > "$work/xclob/$first"
+"$prog" -t -o "$work/xclob" -x "$first" >/dev/null ||
+    fail "an existing file blocked a run that had excluded it"
+[ "$(cat "$work/xclob/$first")" = untouched ] ||
+    fail "-x overwrote the module it was told to skip"
+
 echo "self-test passed: $(find "$tests" -type f | wc -l | tr -d ' ')" \
-    "files match; overwrite and symlink refusals hold"
+    "files match; overwrite, symlink and -x refusals hold"
