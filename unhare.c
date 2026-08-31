@@ -150,15 +150,19 @@ static int	 force;
 static int	 listonly;
 static int	 verbose;
 static const char
+		**includes;		/* name patterns given as operands */
+static size_t	 nincludes;
+static const char
 		**excludes;		/* name patterns given by -x */
 static size_t	 nexcludes;
 static size_t	*wanted;		/* section indices asked for by -s */
 static size_t	 nwanted;
 
-static void	 add_exclude(const char *);
+static void	 add_pattern(const char *, const char ***, size_t *);
 static char	*clean_name(const char *);
 static char	*escaped(const char *);
 static bool	 excluded(const char *);
+static bool	 included(const char *);
 static void	 decode_module(const uint8_t *, struct module *);
 static void	 decode_offsets(const uint8_t *, struct offsets *);
 static void	 decode_sliceptr(const uint8_t *, struct sliceptr *);
@@ -176,6 +180,7 @@ static const char
 		*format_name(uint8_t);
 static const char
 		*loader_name(uint8_t);
+static bool	 matches(const char * const *, size_t, const char *);
 static char	*module_name(const uint8_t *, const struct module *);
 static void	 make_parents(const char *, const char *);
 static void	 make_path(const char *);
@@ -229,7 +234,7 @@ main(int argc, char *argv[])
 			verbose++;
 			break;
 		case 'x':
-			add_exclude(optarg);
+			add_pattern(optarg, &excludes, &nexcludes);
 			break;
 		default:
 			usage(EX_USAGE);
@@ -243,14 +248,16 @@ main(int argc, char *argv[])
 	 * rather than one named on the command line.
 	 */
 	if (tflag) {
-		if (argc != 0)
-			usage(EX_USAGE);
 		file = self_path(self);
 	} else {
-		if (argc != 1)
+		if (argc < 1)
 			usage(EX_USAGE);
 		file = argv[0];
+		argc--;
+		argv++;
 	}
+	for (i = 0; i < (size_t)argc; i++)
+		add_pattern(argv[i], &includes, &nincludes);
 
 	fd = open_input(file);
 
@@ -349,8 +356,10 @@ usage(int status)
 {
 
 	fprintf(status == 0 ? stdout : stderr,
-	    "usage: unhare [-flv] [-o pattern] [-s section] [-x pattern] file\n"
-	    "       unhare -t [-flv] [-o pattern] [-s section] [-x pattern]\n"
+	    "usage: unhare [-flv] [-o pattern] [-s section] [-x pattern] "
+	    "file [pattern ...]\n"
+	    "       unhare -t [-flv] [-o pattern] [-s section] [-x pattern] "
+	    "[pattern ...]\n"
 	    "       unhare -h\n");
 	exit(status);
 }
@@ -511,19 +520,21 @@ find_bundles(Elf *elf, const char *file, struct bundle **listp)
 	return (n);
 }
 
-/* Note a name pattern given by -x. */
+/* Add a module-name pattern to one of the selection lists. */
 static void
-add_exclude(const char *pattern)
+add_pattern(const char *pattern, const char ***patterns, size_t *npatterns)
 {
+	const char **p;
 
-	excludes = reallocarray(excludes, nexcludes + 1, sizeof(*excludes));
-	if (excludes == NULL)
+	p = reallocarray(*patterns, *npatterns + 1, sizeof(*p));
+	if (p == NULL)
 		err(EX_OSERR, "reallocarray");
-	excludes[nexcludes++] = pattern;
+	p[(*npatterns)++] = pattern;
+	*patterns = p;
 }
 
 /*
- * Whether a module name is covered by any -x pattern.
+ * Whether a module name is covered by any pattern in a list.
  *
  * fnmatch(3) is asked for no FNM_PATHNAME, so that a "*" spans the
  * separators and "*.node" reaches an entry however deeply it is buried,
@@ -533,15 +544,15 @@ add_exclude(const char *pattern)
  * pattern written for that one is expected to mean the same here.
  */
 static bool
-excluded(const char *name)
+matches(const char * const *patterns, size_t npatterns, const char *name)
 {
 	const char *p;
 	size_t i;
 
-	for (i = 0; i < nexcludes; i++) {
+	for (i = 0; i < npatterns; i++) {
 		p = name;
 		for (;;) {
-			if (fnmatch(excludes[i], p, 0) == 0)
+			if (fnmatch(patterns[i], p, 0) == 0)
 				return (true);
 			p = strchr(p, '/');
 			if (p == NULL)
@@ -550,6 +561,22 @@ excluded(const char *name)
 		}
 	}
 	return (false);
+}
+
+/* Whether a module name is covered by any -x pattern. */
+static bool
+excluded(const char *name)
+{
+
+	return (matches(excludes, nexcludes, name));
+}
+
+/* With no operand patterns every module is included. */
+static bool
+included(const char *name)
+{
+
+	return (nincludes == 0 || matches(includes, nincludes, name));
 }
 
 /* Note a section asked for by -s. */
@@ -1083,9 +1110,9 @@ write_utf16(const char *path, const uint8_t *data, size_t len)
 /*
  * The name a module unpacks under: what the bundle records, with Bun's
  * virtual filesystem prefix stripped and the separators turned the
- * host's way.  This is the name -x patterns are matched against, and
- * the one safe_path() joins to the output directory.  The caller frees
- * the result.
+ * host's way.  This is the name selection patterns are matched against,
+ * and the one safe_path() joins to the output directory.  The caller
+ * frees the result.
  */
 static char *
 module_name(const uint8_t *blob, const struct module *m)
@@ -1156,9 +1183,9 @@ extract(const uint8_t *region, size_t rlen, const char *outdir)
 	 * Look for anything already in the way before writing a single
 	 * file, so that a run which would clobber something leaves the
 	 * directory as it found it rather than stopping halfway with the
-	 * job half done.  A module -x skips is passed over here as well:
-	 * a file in the way of something we were told not to write is in
-	 * the way of nothing.
+	 * job half done.  A module the selection patterns skip is passed
+	 * over here as well: a file in the way of something we were told
+	 * not to write is in the way of nothing.
 	 */
 	if (!force && !listonly)
 		for (i = 0; i < nmodules; i++) {
@@ -1166,7 +1193,7 @@ extract(const uint8_t *region, size_t rlen, const char *outdir)
 			slice_check(&m.name, o.byte_count, "module name");
 
 			clean = module_name(blob, &m);
-			if (excluded(clean)) {
+			if (!included(clean) || excluded(clean)) {
 				free(clean);
 				continue;
 			}
@@ -1194,6 +1221,16 @@ extract(const uint8_t *region, size_t rlen, const char *outdir)
 		    "module bytecode origin");
 
 		clean = module_name(blob, &m);
+		if (!included(clean)) {
+			if (verbose > 1) {
+				shown = escaped(clean);
+				warnx("skipping module %u: \"%s\" is not "
+				    "selected", i, shown);
+				free(shown);
+			}
+			free(clean);
+			continue;
+		}
 		if (excluded(clean)) {
 			if (verbose > 1) {
 				shown = escaped(clean);

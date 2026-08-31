@@ -202,5 +202,80 @@ printf 'untouched\n' > "$work/xclob/$first"
 [ "$(cat "$work/xclob/$first")" = untouched ] ||
     fail "-x overwrote the module it was told to skip"
 
+# Trailing operands include the modules matching any of their globs.  They
+# use the same names and tar-style matching rules as -x, and no operands
+# still means the whole bundle, as the full extractions above establish.
+
+# An exact name after the input binary selects that module and no other.
+"$prog" -l -o "$work/i" "$prog" "$first" |
+    sed "s|^$work/i/||" > "$work/i-one.txt" ||
+    fail "an inclusion pattern after the input binary failed"
+[ "$(cat "$work/i-one.txt")" = "$first" ] ||
+    fail "an exact inclusion pattern selected the wrong modules"
+
+# -t supplies its input binary implicitly, so its trailing operands are
+# patterns as well.
+"$prog" -t -l -o "$work/i" "$first" |
+    sed "s|^$work/i/||" > "$work/i-self.txt" ||
+    fail "an inclusion pattern with -t failed"
+cmp -s "$work/i-one.txt" "$work/i-self.txt" ||
+    fail "-t interpreted an inclusion pattern differently"
+
+# A pattern matching nothing selects nothing.
+"$prog" -t -l -o "$work/i" 'does-not-match-*' > "$work/i-none.txt" ||
+    fail "an unmatched inclusion pattern failed"
+[ -s "$work/i-none.txt" ] &&
+    fail "an unmatched inclusion pattern selected modules"
+
+# Multiple patterns form a union; neither may be dropped.
+"$prog" -t -l -o "$work/i" "$first" "$second" |
+    sed "s|^$work/i/||" | sort > "$work/i-two.txt" ||
+    fail "multiple inclusion patterns failed"
+[ "$(wc -l < "$work/i-two.txt" | tr -d ' ')" = 2 ] ||
+    fail "multiple inclusion patterns did not select two modules"
+grep -qx "$first" "$work/i-two.txt" ||
+    fail "the first inclusion pattern was dropped"
+grep -qx "$second" "$work/i-two.txt" ||
+    fail "the second inclusion pattern was dropped"
+
+# Matching restarts at component boundaries, just as it does for -x.
+"$prog" -t -l -o "$work/i" "${first#*/}" |
+    sed "s|^$work/i/||" > "$work/i-tail.txt" ||
+    fail "a component-relative inclusion pattern failed"
+cmp -s "$work/i-one.txt" "$work/i-tail.txt" ||
+    fail "an inclusion pattern matched only at the start of the name"
+
+# A "*" spans separators here too.  Every bundled file is a .txt below
+# the first component, so this pattern must recover the complete listing.
+"$prog" -t -l -o "$work/i" "${first%%/*}/*.txt" |
+    sed "s|^$work/i/||" | sort > "$work/i-deep.txt" ||
+    fail "a deep inclusion pattern failed"
+cmp -s "$work/x-all.txt" "$work/i-deep.txt" ||
+    fail "a \"*\" in an inclusion pattern did not span separators"
+
+# Exclusion is the final word when a name matches both lists.
+"$prog" -t -l -o "$work/i" -x "$first" "$first" "$second" |
+    sed "s|^$work/i/||" > "$work/i-excluded.txt" ||
+    fail "combined inclusion and exclusion failed"
+[ "$(cat "$work/i-excluded.txt")" = "$second" ] ||
+    fail "an inclusion pattern overrode -x"
+
+# A real run writes only what was selected.
+"$prog" -t -o "$work/ireal" "$first" >/dev/null ||
+    fail "inclusion-pattern extraction failed"
+[ -f "$work/ireal/$first" ] ||
+    fail "inclusion-pattern extraction omitted its selected module"
+[ "$(find "$work/ireal" -type f | wc -l | tr -d ' ')" = 1 ] ||
+    fail "inclusion-pattern extraction wrote an unselected module"
+
+# Nor may an existing unselected file take part in the pre-flight
+# collision check.
+mkdir -p "$work/iclob/$(dirname "$second")"
+printf 'untouched\n' > "$work/iclob/$second"
+"$prog" -t -o "$work/iclob" "$first" >/dev/null ||
+    fail "an unselected existing file blocked extraction"
+[ "$(cat "$work/iclob/$second")" = untouched ] ||
+    fail "an inclusion pattern overwrote an unselected module"
+
 echo "self-test passed: $(find "$tests" -type f | wc -l | tr -d ' ')" \
-    "files match; overwrite, symlink and -x refusals hold"
+    "files match; overwrite, symlink and selection refusals hold"

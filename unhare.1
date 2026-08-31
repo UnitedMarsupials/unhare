@@ -3,7 +3,7 @@
 .\"
 .\" Copyright (c) 2026 Mikhail Teterin
 .\"
-.Dd August 28, 2026
+.Dd August 31, 2026
 .Dt UNHARE 1
 .Os
 .Sh NAME
@@ -16,12 +16,14 @@
 .Op Fl s Ar section
 .Op Fl x Ar pattern
 .Ar file
+.Op Ar pattern ...
 .Nm
 .Fl t
 .Op Fl flv
 .Op Fl o Ar pattern
 .Op Fl s Ar section
 .Op Fl x Ar pattern
+.Op Ar pattern ...
 .Nm
 .Fl h
 .Sh DESCRIPTION
@@ -110,6 +112,21 @@ converts it back to UTF-8 on the way out, so that the extracted file
 reads the way the original source did.
 Contents recorded as Latin-1 or as binary are written through unchanged.
 .Pp
+When one or more
+.Ar pattern
+operands follow
+.Ar file ,
+only files matching at least one of them are extracted.
+With no patterns every file is selected.
+The patterns are shell globs with the same bundle-relative names and
+matching rules described for
+.Fl x
+below.
+An exclusion takes precedence when a file matches both.
+With
+.Fl t ,
+which supplies its input binary implicitly, the patterns follow the options.
+.Pp
 The options are as follows:
 .Bl -tag -width indent
 .It Fl f
@@ -166,6 +183,7 @@ itself, rather than one
 named on the command line, and take no
 .Ar file
 operand.
+Any remaining operands are selection patterns.
 The program to read is the one named by
 .Va argv Ns Bq 0 ,
 or, when that names no readable file, the one the kernel reports for
@@ -190,10 +208,10 @@ error, so that a single
 leaves a list of names fit to pipe
 onward.
 .It Fl x Ar pattern
-Skip the modules whose names match
+Skip the files whose names match
 .Ar pattern ,
 which may be given more than once to name several.
-A module matching any of them is neither written nor listed, as though
+A file matching any of them is neither written nor listed, as though
 the bundle did not hold it.
 .Pp
 .Ar pattern
@@ -218,7 +236,7 @@ again at every component boundary, so that
 .Ql node_modules/*
 catches a nested tree as readily as a top-level one.
 .Pp
-A file already in the way of a module that
+A file already in the way of an entry that
 .Fl x
 skips is in the way of
 nothing, and no longer a reason to refuse the whole extraction.
@@ -275,6 +293,11 @@ Unpack an application without its native addons, and without anything
 bundled from a node_modules tree:
 .Bd -literal -offset indent
 unhare -o app-files -x '*.node' -x 'node_modules/*' ./app
+.Ed
+.Pp
+Unpack only JavaScript modules and configuration files:
+.Bd -literal -offset indent
+unhare -o app-files ./app '*.js' '*.json'
 .Ed
 .Pp
 Unpack the bundle this program carries:

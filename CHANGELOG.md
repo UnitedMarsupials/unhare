@@ -1,8 +1,14 @@
 # Changelog
 
+## 1.1.1 (2026-08-31)
+
+- Accept shell-glob patterns after the input binary, extracting only files
+  that match at least one.  With no patterns, every file is extracted as
+  before, and `-x` exclusions still take precedence.
+
 ## 1.1 (2026-08-28)
 
-- Add `-x pattern`, which skips the modules whose names match a shell
+- Add `-x pattern`, which skips the files whose names match a shell
   glob, the way `tar --exclude` does.  It may be given more than once,
   and a file in the way of a module it skips no longer stops the run.
 

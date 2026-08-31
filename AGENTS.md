@@ -20,6 +20,14 @@ Do not push commits or tags to any remote unless the user explicitly asks
 you to push them.  Permission to edit, test or commit is not permission to
 push.
 
+## Release archives use extreme xz compression
+
+Compress release tarballs with xz's maximum, extreme setting: `xz -9e -c`.
+Do not silently use xz's default preset.  When calling liblzma rather than
+the `xz` program, use preset 9 combined with its extreme flag.  Before
+uploading an archive, decompress it again and verify that the resulting tar
+stream exactly matches the one made from the release tag.
+
 ## Style
 
 The code follows FreeBSD `style(9)`.  Match the surrounding code:

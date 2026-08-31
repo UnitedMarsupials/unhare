@@ -46,8 +46,8 @@ the program lands in `/usr/local/bin` and its manual page in
 ## Usage
 
 ```
-usage: unhare [-flv] [-o pattern] [-s section] [-x pattern] file
-       unhare -t [-flv] [-o pattern] [-s section] [-x pattern]
+usage: unhare [-flv] [-o pattern] [-s section] [-x pattern] file [pattern ...]
+       unhare -t [-flv] [-o pattern] [-s section] [-x pattern] [pattern ...]
        unhare -h
 ```
 
@@ -74,21 +74,26 @@ usage: unhare [-flv] [-o pattern] [-s section] [-x pattern] file
   clobber something leaves the directory as it found it rather than
   stopping partway through.
 - `-t` -- unpack the bundle built into `unhare` itself, taking no `file`
-  operand.  See "Self-test" below.
+  operand.  Any remaining operands are inclusion patterns.  See
+  "Self-test" below.
 - `-v` -- write the name of each extracted file to standard output, one
   to a line, and report on standard error where the bundle was found and
   how much was written.  Given twice, annotate each name with the bytes
   written, loader, module format, encoding and side, and report the
   bundle header as well.  The listing goes to stdout and everything else
   to stderr, so a single `-v` leaves a list of names fit to pipe onward.
-- `-x pattern` -- skip the modules whose names match the shell glob
+- `pattern ...` -- extract only files whose names match at least one
+  trailing shell glob.  With no patterns, every file is selected, as
+  before.  These use the same bundle-relative names and matching rules as
+  `-x`; when both match a file, `-x` wins.
+- `-x pattern` -- skip the files whose names match the shell glob
   *pattern*; repeatable.  The rules are `tar --exclude`'s, matched with
   `fnmatch(3)` against the name the bundle records -- the name `-l`
   lists, less its `-o` directory.  A `*` spans the separators, so
   `*.node` reaches an entry however deeply it is buried, and each
   pattern is tried again at every component boundary, so `node_modules/*`
   catches a nested tree as readily as a top-level one.  A file in the way
-  of an excluded module is in the way of nothing, and no longer stops the
+  of an excluded file is in the way of nothing, and no longer stops the
   run.
 
 See `unhare.1` for the full description.
@@ -412,6 +417,10 @@ So are five ways of getting `-x` wrong: a pattern that never matches,
 start of a name rather than at every component boundary, the pre-flight
 existence check left to trip over an excluded module, and a second `-x`
 quietly dropped.
+The corresponding inclusion tests catch an operand pattern being ignored,
+multiple patterns being intersected or all but one dropped, different glob
+rules from `-x`, an exclusion losing to an inclusion, and an unselected
+module taking part in the pre-flight collision check.
 
 **Astral characters earn their place.**  The three characters ending
 `tests/UTF-16/mao.txt` are not decoration.  Each is a surrogate pair, so
