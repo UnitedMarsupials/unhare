@@ -387,6 +387,13 @@ default setup is enabled".  Switching to advanced setup offers a template
 workflow at the same path, which reads the C without building it (`build-mode:
 none`) and so never sees `bunfs.c`; this file replaces it.
 
+Actions are referenced by major version, and `.github/dependabot.yml` opens
+a weekly pull request when any of them has a newer release.  An action has
+no `latest` ref to follow, and `@main` would run unreleased code.  Keeping
+up matters: an action built for an older Node.js than the runner offers is
+forced onto the newer one with a deprecation warning on every job, as
+`upload-artifact@v4` and `download-artifact@v5` were on Node.js 20.
+
 A note for anyone writing test fixtures: real Bun labels ASCII content
 Latin-1 (encoding 1), never 2.  A fixture that says 2 will be decoded as
 UTF-16 and mangled, correctly.
