@@ -370,6 +370,16 @@ and parsed with Node.js where it is installed.  This exercises ELF section
 lookup and Mach-O fallback on every host, including FreeBSD reading both real
 Bun formats.  The transient artifacts use GitHub's minimum one-day retention.
 
+CodeQL (`.github/workflows/codeql.yml`) analyses the C and the workflows
+with the `security-and-quality` suite on every push, and weekly so new
+queries reach unchanged code.  The C is analysed in manual build mode,
+compiled by `make` under CodeQL's tracer exactly as the Linux job builds
+it, so `mkbunfs.c` and the generated `bunfs.c` are seen along with
+`unhare.c`; the autobuilder would have to guess at a project with no
+`Makefile` or `configure`.  Running the same commands with CodeQL CLI
+2.27.1 locally confirmed all three C files and both workflows are
+extracted.
+
 A note for anyone writing test fixtures: real Bun labels ASCII content
 Latin-1 (encoding 1), never 2.  A fixture that says 2 will be decoded as
 UTF-16 and mangled, correctly.

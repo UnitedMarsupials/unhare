@@ -1,0 +1,54 @@
+name: codeql
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  # Weekly, so that new queries reach code that has not changed.
+  schedule:
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The C is compiled under CodeQL's tracer, so it sees exactly
+          # what the Linux build job builds, mkbunfs and bunfs.c included.
+          - language: c-cpp
+            build-mode: manual
+          # The workflows themselves: untrusted input reaching a shell,
+          # excessive permissions, unpinned actions and the like.
+          - language: actions
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install libelf
+        if: matrix.language == 'c-cpp'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libelf-dev
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-and-quality
+
+      - name: build
+        if: matrix.build-mode == 'manual'
+        run: make
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
