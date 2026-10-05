@@ -380,6 +380,13 @@ it, so `mkbunfs.c` and the generated `bunfs.c` are seen along with
 2.27.1 locally confirmed all three C files and both workflows are
 extracted.
 
+CodeQL's "default setup" in the repository settings must stay off.  While
+it is on, GitHub analyses the workflow fine and then rejects the upload with
+"CodeQL analyses from advanced configurations cannot be processed when the
+default setup is enabled".  Switching to advanced setup offers a template
+workflow at the same path, which reads the C without building it (`build-mode:
+none`) and so never sees `bunfs.c`; this file replaces it.
+
 A note for anyone writing test fixtures: real Bun labels ASCII content
 Latin-1 (encoding 1), never 2.  A fixture that says 2 will be decoded as
 UTF-16 and mangled, correctly.
