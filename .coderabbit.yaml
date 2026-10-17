@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+#
+# CodeRabbit's pull-request reviews: somewhat pickier than its defaults,
+# without blocking anything.  Anything not set here keeps CodeRabbit's
+# default.  Its linters for this repository's files (cppcheck, clang,
+# shellcheck, actionlint, yamllint, markdownlint) are on by default.
+language: en-US
+
+reviews:
+  # `assertive` rather than the default `chill`: every remark is posted
+  # inline on the line it is about, instead of the less certain ones being
+  # folded into a collapsed "nitpicks" section of the summary comment.
+  profile: assertive
+
+  # What this code base gets wrong easily (see AGENTS.md), so that the extra
+  # attention goes where it is worth something.
+  path_instructions:
+    - path: "**/*.c"
+      instructions: &c |
+        - unhare parses attacker-controlled binary data and writes files.
+          Every offset, length and count read from the input must be
+          bounds-checked before use, with arithmetic that cannot overflow;
+          truncated or corrupt input must fail cleanly. A module name must
+          never let a write land outside the output directory (absolute
+          paths, "..", embedded NULs, symlinks along the way).
+        - FreeBSD style(9): hard tabs, four-space continuation lines,
+          80 columns, return type on its own line in a definition,
+          declarations at the top of a block, `return (x);`, and
+          err/errx/warn/warnx rather than fprintf(stderr, ...) and exit.
+          Headers in style(9) order.
+        - The build is WARNS=6 and must stay warning-free on FreeBSD, Linux
+          and macOS (compat.h); flag anything that would need WARNS lowered.
+        - A command-line change must update usage() and unhare.1 in the
+          same change, and a change a user would notice needs a line in
+          CHANGELOG.md. Something learnt about the Bun format or ELF
+          belongs in README.md.
+    - path: "**/*.h"
+      instructions: *c
+    - path: "unhare.1"
+      instructions: |
+        mdoc, sections in the conventional order, and in agreement with
+        usage() in unhare.c and with what the code does (mandoc -T lint
+        must stay clean).
+    - path: "CHANGELOG.md"
+      instructions: |
+        Newest version first, under "## <version> (YYYY-MM-DD)". Entries say
+        what the program now does differently, for someone deciding whether
+        to upgrade; maintainer detail belongs in README.md.
+    - path: "tests/**"
+      instructions: |
+        A directory's name chooses the Bun encoding under test (US-ASCII,
+        UTF-16, anything else as binary), and files under a UTF-16
+        directory are UTF-8 on disk. A new case should be able to fail:
+        ask whether the test would catch the bug it is for.
+    - path: "**/*.sh"
+      instructions: |
+        These run under plain /bin/sh on the BSDs, macOS and Linux: flag
+        bashisms and GNU-only options. selftest.sh checks, from -v, which
+        lookup path ran; those checks must stay.
